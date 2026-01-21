@@ -44,14 +44,48 @@ fn run_app(
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                // HELP POPUP HANDLING
-                if app.focus == Focus::Help {
+                // GLOBAL QUIT
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
+                    return Ok(());
+                }
+
+                // HELP
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('h') {
+                    app.focus = if app.focus == Focus::Help {
+                        Focus::Files
+                    } else {
+                        Focus::Help
+                    };
+                    continue;
+                }
+
+                // NEW NOTE POPUP
+                if app.focus == Focus::NewNote {
                     match key.code {
-                        KeyCode::Esc
-                        | KeyCode::Char('h')
-                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                        {
+                        KeyCode::Esc => {
+                            app.new_note_input.clear();
                             app.focus = Focus::Files;
+                        }
+                        KeyCode::Enter => {
+                            let mut name = app.new_note_input.clone();
+                            if !name.ends_with(".md") {
+                                name.push_str(".md");
+                            }
+                            let path = app.notes_dir.join(name);
+                            fs::save_file(&path, "");
+                            app.files = fs::list_md_files(&app.notes_dir);
+                            app.selected = app.files.len().saturating_sub(1);
+                            app.content.clear();
+                            app.cursor = 0;
+                            app.new_note_input.clear();
+                            app.status = "Created new note".into();
+                            app.focus = Focus::Editor;
+                        }
+                        KeyCode::Backspace => {
+                            app.new_note_input.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            app.new_note_input.push(c);
                         }
                         _ => {}
                     }
@@ -59,30 +93,18 @@ fn run_app(
                 }
 
                 match key.code {
-                    // Quit
-                    KeyCode::Char('q')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        return Ok(());
-                    }
-
-                    // Help
-                    KeyCode::Char('h')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        app.focus = Focus::Help;
-                    }
-
-                    // Switch pane
                     KeyCode::Tab => {
                         app.focus = match app.focus {
                             Focus::Files => Focus::Editor,
                             Focus::Editor => Focus::Files,
-                            Focus::Help => Focus::Files,
+                            _ => Focus::Files,
                         };
                     }
 
-                    // FILE PANE
+                    KeyCode::Char('n') if app.focus == Focus::Files => {
+                        app.focus = Focus::NewNote;
+                    }
+
                     KeyCode::Up if app.focus == Focus::Files => {
                         if app.selected > 0 {
                             app.selected -= 1;
@@ -101,11 +123,8 @@ fn run_app(
                         }
                     }
 
-                    // EDITOR
                     KeyCode::Left if app.focus == Focus::Editor => {
-                        if app.cursor > 0 {
-                            app.cursor -= 1;
-                        }
+                        app.cursor = app.cursor.saturating_sub(1);
                     }
                     KeyCode::Right if app.focus == Focus::Editor => {
                         if app.cursor < app.content.len() {
@@ -122,6 +141,7 @@ fn run_app(
                         if key.modifiers.contains(KeyModifiers::CONTROL) && c == 's' {
                             if let Some(path) = app.files.get(app.selected) {
                                 fs::save_file(path, &app.content);
+                                app.status = "Saved ✓".into();
                             }
                         } else {
                             app.content.insert(app.cursor, c);

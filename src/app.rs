@@ -5,6 +5,7 @@ pub enum Focus {
     Files,
     Editor,
     Help,
+    NewNote,
 }
 
 pub struct App {
@@ -16,6 +17,12 @@ pub struct App {
     pub cursor: usize,
 
     pub focus: Focus,
+
+    // Status bar
+    pub status: String,
+
+    // New note popup
+    pub new_note_input: String,
 }
 
 impl App {
@@ -27,6 +34,16 @@ impl App {
             content: String::new(),
             cursor: 0,
             focus: Focus::Files,
+            status: String::from("Ready"),
+            new_note_input: String::new(),
         }
+    }
+
+    pub fn current_file_name(&self) -> String {
+        self.files
+            .get(self.selected)
+            .and_then(|p| p.file_name())
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "-".into())
     }
 }

@@ -1,1 +1,1 @@
-so i also added this:
+Yo, now I can talk good to you guys! And I might even save some of m :) as
