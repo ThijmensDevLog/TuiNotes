@@ -1,12 +1,21 @@
 use std::path::PathBuf;
 
+#[derive(PartialEq, Eq)]
+pub enum Focus {
+    Files,
+    Editor,
+    Help,
+}
+
 pub struct App {
     pub notes_dir: PathBuf,
     pub files: Vec<PathBuf>,
     pub selected: usize,
+
     pub content: String,
     pub cursor: usize,
-    pub should_quit: bool,
+
+    pub focus: Focus,
 }
 
 impl App {
@@ -17,7 +26,7 @@ impl App {
             selected: 0,
             content: String::new(),
             cursor: 0,
-            should_quit: false,
+            focus: Focus::Files,
         }
     }
 }

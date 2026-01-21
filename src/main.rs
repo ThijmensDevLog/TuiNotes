@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use app::App;
+use app::{App, Focus};
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
@@ -24,7 +24,6 @@ fn main() -> Result<(), io::Error> {
 
     let result = run_app(&mut terminal);
 
-    // ALWAYS restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
@@ -45,42 +44,88 @@ fn run_app(
 
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    // Quit cleanly
-                    KeyCode::Char('q') => return Ok(()),
+                // HELP POPUP HANDLING
+                if app.focus == Focus::Help {
+                    match key.code {
+                        KeyCode::Esc
+                        | KeyCode::Char('h')
+                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            app.focus = Focus::Files;
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
 
-                    // File navigation
-                    KeyCode::Up => {
+                match key.code {
+                    // Quit
+                    KeyCode::Char('q')
+                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        return Ok(());
+                    }
+
+                    // Help
+                    KeyCode::Char('h')
+                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        app.focus = Focus::Help;
+                    }
+
+                    // Switch pane
+                    KeyCode::Tab => {
+                        app.focus = match app.focus {
+                            Focus::Files => Focus::Editor,
+                            Focus::Editor => Focus::Files,
+                            Focus::Help => Focus::Files,
+                        };
+                    }
+
+                    // FILE PANE
+                    KeyCode::Up if app.focus == Focus::Files => {
                         if app.selected > 0 {
                             app.selected -= 1;
                         }
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down if app.focus == Focus::Files => {
                         if app.selected + 1 < app.files.len() {
                             app.selected += 1;
                         }
                     }
-
-                    // Open file
-                    KeyCode::Enter => {
+                    KeyCode::Enter if app.focus == Focus::Files => {
                         if let Some(path) = app.files.get(app.selected) {
                             app.content = fs::load_file(path);
                             app.cursor = app.content.len();
+                            app.focus = Focus::Editor;
                         }
                     }
 
-                    // Editing
-                    KeyCode::Backspace => {
-                        app.content.pop();
+                    // EDITOR
+                    KeyCode::Left if app.focus == Focus::Editor => {
+                        if app.cursor > 0 {
+                            app.cursor -= 1;
+                        }
                     }
-
-                    KeyCode::Char(c) => {
+                    KeyCode::Right if app.focus == Focus::Editor => {
+                        if app.cursor < app.content.len() {
+                            app.cursor += 1;
+                        }
+                    }
+                    KeyCode::Backspace if app.focus == Focus::Editor => {
+                        if app.cursor > 0 {
+                            app.cursor -= 1;
+                            app.content.remove(app.cursor);
+                        }
+                    }
+                    KeyCode::Char(c) if app.focus == Focus::Editor => {
                         if key.modifiers.contains(KeyModifiers::CONTROL) && c == 's' {
                             if let Some(path) = app.files.get(app.selected) {
                                 fs::save_file(path, &app.content);
                             }
                         } else {
-                            app.content.push(c);
+                            app.content.insert(app.cursor, c);
+                            app.cursor += 1;
                         }
                     }
 
