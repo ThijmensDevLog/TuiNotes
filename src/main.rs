@@ -22,6 +22,18 @@ fn main() -> Result<(), io::Error> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let result = run_app(&mut terminal);
+
+    // ALWAYS restore terminal
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    result
+}
+
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) -> Result<(), io::Error> {
     let notes_dir = PathBuf::from("./notes");
     std::fs::create_dir_all(&notes_dir).ok();
 
@@ -34,20 +46,22 @@ fn main() -> Result<(), io::Error> {
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => app.should_quit = true,
+                    // Quit cleanly
+                    KeyCode::Char('q') => return Ok(()),
 
+                    // File navigation
                     KeyCode::Up => {
                         if app.selected > 0 {
                             app.selected -= 1;
                         }
                     }
-
                     KeyCode::Down => {
                         if app.selected + 1 < app.files.len() {
                             app.selected += 1;
                         }
                     }
 
+                    // Open file
                     KeyCode::Enter => {
                         if let Some(path) = app.files.get(app.selected) {
                             app.content = fs::load_file(path);
@@ -55,6 +69,7 @@ fn main() -> Result<(), io::Error> {
                         }
                     }
 
+                    // Editing
                     KeyCode::Backspace => {
                         app.content.pop();
                     }
@@ -73,13 +88,5 @@ fn main() -> Result<(), io::Error> {
                 }
             }
         }
-
-        if app.should_quit {
-            break;
-        }
     }
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    Ok(())
 }
