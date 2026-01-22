@@ -2,7 +2,14 @@
 name = "tui-notes"
 version = "0.1.0"
 edition = "2024"
+authors = ["ThijmensDevLog"]
+description = "A terminal notes app!"
+licence = "MIT"
 
 [dependencies]
 ratatui = "0.26"
 crossterm = "0.27"
+
+[[bin]]
+name = "tui-notes"
+path = "src/main.rs"
