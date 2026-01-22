@@ -39,6 +39,10 @@ fn run_app(
     let mut app = App::new(notes_dir.clone());
     app.files = fs::list_md_files(&notes_dir);
 
+    if let Some(path) = app.current_file() {
+        app.load_content(fs::load_file(path));
+    }
+
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
 
@@ -46,24 +50,32 @@ fn run_app(
             if let Event::Key(key) = event::read()? {
                 /* ---------- GLOBAL ---------- */
 
-                // Quit
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     && key.code == KeyCode::Char('q')
                 {
                     return Ok(());
                 }
 
-                // Switch pane
-                if key.code == KeyCode::Tab {
-                    app.focus = match app.focus {
-                        Focus::Files => Focus::Editor,
-                        Focus::Editor => Focus::Files,
-                        _ => Focus::Files,
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && key.code == KeyCode::Char('h')
+                {
+                    app.focus = if app.focus == Focus::Help {
+                        Focus::Files
+                    } else {
+                        Focus::Help
                     };
                     continue;
                 }
 
-                // Search
+                if key.code == KeyCode::Tab {
+                    app.focus = match app.focus {
+                        Focus::Files => Focus::Editor,
+                        Focus::Editor => Focus::Files,
+                        other => other,
+                    };
+                    continue;
+                }
+
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     && key.code == KeyCode::Char('p')
                 {
@@ -74,17 +86,90 @@ fn run_app(
                     continue;
                 }
 
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && key.code == KeyCode::Char('s')
+                {
+                    if let Some(path) = app.current_file() {
+                        fs::save_file(path, &app.content_as_string());
+                    }
+                    continue; // ⬅ IMPORTANT
+                }
+
+                /* ---------- HELP ---------- */
+
+                if app.focus == Focus::Help {
+                    if key.code == KeyCode::Esc
+                        || (key.modifiers.contains(KeyModifiers::CONTROL)
+                            && key.code == KeyCode::Char('h'))
+                    {
+                        app.focus = Focus::Files;
+                    }
+                    continue;
+                }
+
+                /* ---------- FILES ---------- */
+
+                if app.focus == Focus::Files {
+                    match key.code {
+                        KeyCode::Up => {
+                            app.selected = app.selected.saturating_sub(1);
+                            let path = app.current_file().unwrap();
+                            app.load_content(fs::load_file(path));
+                        }
+                        KeyCode::Down => {
+                            if app.selected + 1 < app.files.len() {
+                                app.selected += 1;
+                                let path = app.current_file().unwrap();
+                                app.load_content(fs::load_file(path));
+                            }
+                        }
+                        KeyCode::Char('n') => {
+                            app.focus = Focus::NewNote;
+                            app.new_note_input.clear();
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
+                /* ---------- NEW NOTE ---------- */
+
+                if app.focus == Focus::NewNote {
+                    match key.code {
+                        KeyCode::Esc => app.focus = Focus::Files,
+                        KeyCode::Enter => {
+                            let mut name = app.new_note_input.clone();
+                            if !name.ends_with(".md") {
+                                name.push_str(".md");
+                            }
+                            let path = notes_dir.join(name);
+                            fs::save_file(&path, "");
+                            app.files = fs::list_md_files(&notes_dir);
+                            app.selected = app.files.len() - 1;
+                            app.load_content(String::new());
+                            app.focus = Focus::Editor;
+                        }
+                        KeyCode::Backspace => {
+                            app.new_note_input.pop();
+                        }
+                        KeyCode::Char(c)
+                            if key.modifiers.is_empty() =>
+                        {
+                            app.new_note_input.push(c);
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 /* ---------- SEARCH ---------- */
 
                 if app.focus == Focus::Search {
                     match key.code {
-                        KeyCode::Esc => {
-                            app.focus = Focus::Files;
-                        }
+                        KeyCode::Esc => app.focus = Focus::Files,
                         KeyCode::Enter => {
-                            let idx = app.search_results[app.search_selected];
-                            app.selected = idx;
-                            let path = &app.files[idx];
+                            app.selected = app.search_results[app.search_selected];
+                            let path = app.current_file().unwrap();
                             app.load_content(fs::load_file(path));
                             app.focus = Focus::Editor;
                         }
@@ -100,7 +185,9 @@ fn run_app(
                         KeyCode::Backspace => {
                             app.search_input.pop();
                         }
-                        KeyCode::Char(c) => {
+                        KeyCode::Char(c)
+                            if key.modifiers.is_empty() =>
+                        {
                             app.search_input.push(c);
                         }
                         _ => {}
@@ -119,28 +206,6 @@ fn run_app(
                         .map(|(i, _)| i)
                         .collect();
 
-                    continue;
-                }
-
-                /* ---------- FILES ---------- */
-
-                if app.focus == Focus::Files {
-                    match key.code {
-                        KeyCode::Up => {
-                            app.selected = app.selected.saturating_sub(1);
-                        }
-                        KeyCode::Down => {
-                            if app.selected + 1 < app.files.len() {
-                                app.selected += 1;
-                            }
-                        }
-                        KeyCode::Enter => {
-                            let path = &app.files[app.selected];
-                            app.load_content(fs::load_file(path));
-                            app.focus = Focus::Editor;
-                        }
-                        _ => {}
-                    }
                     continue;
                 }
 
@@ -173,8 +238,9 @@ fn run_app(
                             }
                         }
                         KeyCode::Enter => {
-                            let current = app.lines[app.cursor_row].split_off(app.cursor_col);
-                            app.lines.insert(app.cursor_row + 1, current);
+                            let rest =
+                                app.lines[app.cursor_row].split_off(app.cursor_col);
+                            app.lines.insert(app.cursor_row + 1, rest);
                             app.cursor_row += 1;
                             app.cursor_col = 0;
                         }
@@ -183,26 +249,26 @@ fn run_app(
                                 app.lines[app.cursor_row].remove(app.cursor_col - 1);
                                 app.cursor_col -= 1;
                             } else if app.cursor_row > 0 {
-                                let prev_len = app.lines[app.cursor_row - 1].len();
                                 let line = app.lines.remove(app.cursor_row);
                                 app.cursor_row -= 1;
-                                app.cursor_col = prev_len;
+                                app.cursor_col = app.lines[app.cursor_row].len();
                                 app.lines[app.cursor_row].push_str(&line);
                             }
                         }
-                        KeyCode::Char(c) => {
+                        KeyCode::Char(c)
+                            if key.modifiers.is_empty() =>
+                        {
                             app.lines[app.cursor_row].insert(app.cursor_col, c);
                             app.cursor_col += 1;
                         }
                         _ => {}
                     }
 
-                    // Scroll logic
-                    let visible_height = terminal.size()?.height as usize - 3;
+                    let visible = terminal.size()?.height as usize - 3;
                     if app.cursor_row < app.scroll {
                         app.scroll = app.cursor_row;
-                    } else if app.cursor_row >= app.scroll + visible_height {
-                        app.scroll = app.cursor_row - visible_height + 1;
+                    } else if app.cursor_row >= app.scroll + visible {
+                        app.scroll = app.cursor_row - visible + 1;
                     }
                 }
             }

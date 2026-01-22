@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Focus {
     Files,
     Editor,
-    Help,
-    NewNote,
     Search,
+    NewNote,
+    Help,
 }
 
 pub struct App {
@@ -22,7 +22,7 @@ pub struct App {
 
     pub focus: Focus,
 
-    // Status bar
+    // Status (now just filename usage)
     pub status: String,
 
     // New note
@@ -45,7 +45,7 @@ impl App {
             cursor_col: 0,
             scroll: 0,
             focus: Focus::Files,
-            status: "Ready".into(),
+            status: String::new(),
             new_note_input: String::new(),
             search_input: String::new(),
             search_results: Vec::new(),
@@ -53,9 +53,12 @@ impl App {
         }
     }
 
+    pub fn current_file(&self) -> Option<&PathBuf> {
+        self.files.get(self.selected)
+    }
+
     pub fn current_file_name(&self) -> String {
-        self.files
-            .get(self.selected)
+        self.current_file()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "-".into())

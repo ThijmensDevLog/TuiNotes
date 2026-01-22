@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Frame,
@@ -8,7 +8,7 @@ use ratatui::{
 use crate::app::{App, Focus};
 
 const TEXT: Color = Color::Gray;
-const BORDER_FOCUS: Color = Color::White;
+const BORDER_ACTIVE: Color = Color::White;
 const BORDER_IDLE: Color = Color::DarkGray;
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -21,9 +21,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_status_bar(f, app, layout[1]);
 
     match app.focus {
-        Focus::Help => draw_help_popup(f),
-        Focus::NewNote => draw_new_note_popup(f, app),
         Focus::Search => draw_search_popup(f, app),
+        Focus::NewNote => draw_new_note_popup(f, app),
+        Focus::Help => draw_help_popup(f),
         _ => {}
     }
 }
@@ -58,7 +58,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
         .title(" Files ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if app.focus == Focus::Files {
-            BORDER_FOCUS
+            BORDER_ACTIVE
         } else {
             BORDER_IDLE
         }));
@@ -67,19 +67,19 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_editor(f: &mut Frame, app: &App, area: Rect) {
-    let visible_lines = &app.lines[app.scroll..];
+    let visible = &app.lines[app.scroll..];
 
     let block = Block::default()
         .title(format!(" Editor — {} ", app.current_file_name()))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if app.focus == Focus::Editor {
-            BORDER_FOCUS
+            BORDER_ACTIVE
         } else {
             BORDER_IDLE
         }));
 
     f.render_widget(
-        Paragraph::new(visible_lines.join("\n"))
+        Paragraph::new(visible.join("\n"))
             .style(Style::default().fg(TEXT))
             .block(block),
         area,
@@ -93,39 +93,40 @@ fn draw_editor(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let text = format!(
-        " {} | {} | {} | Ctrl+P search | Ctrl+S save | Ctrl+Q quit ",
-        match app.focus {
-            Focus::Files => "FILES",
-            Focus::Editor => "EDITOR",
-            Focus::Help => "HELP",
-            Focus::NewNote => "NEW NOTE",
-            Focus::Search => "SEARCH",
-        },
-        app.current_file_name(),
-        app.status
-    );
+    let text = format!(" {} ", app.current_file_name());
 
     f.render_widget(
-        Paragraph::new(text).style(Style::default().fg(Color::Black).bg(Color::Gray)),
+        Paragraph::new(text)
+            .style(Style::default().fg(Color::Black).bg(Color::Gray)),
         area,
     );
 }
 
 fn draw_help_popup(f: &mut Frame) {
-    popup(f, " Help ", "Ctrl+P Search\nCtrl+S Save\nCtrl+Q Quit\nTab Switch pane\nEsc Close");
-}
+    let area = centered_rect(50, 50, f.size());
+    f.render_widget(Clear, area);
 
-fn draw_new_note_popup(f: &mut Frame, app: &App) {
-    popup(
-        f,
-        " New Note ",
-        &format!("File name:\n\n{}", app.new_note_input),
+    let text = r#"
+Tab        Switch Files / Editor
+Ctrl+P     Search notes
+Ctrl+S     Save
+Ctrl+Q     Quit
+Ctrl+H     Toggle help
+n          New note
+"#;
+
+    f.render_widget(
+        Paragraph::new(text)
+            .block(Block::default().title(" Help ").borders(Borders::ALL)),
+        area,
     );
 }
 
 fn draw_search_popup(f: &mut Frame, app: &App) {
-    let results: Vec<ListItem> = app
+    let area = centered_rect(60, 60, f.size());
+    f.render_widget(Clear, area);
+
+    let items: Vec<ListItem> = app
         .search_results
         .iter()
         .enumerate()
@@ -140,11 +141,8 @@ fn draw_search_popup(f: &mut Frame, app: &App) {
         })
         .collect();
 
-    let area = centered_rect(60, 60, f.size());
-    f.render_widget(Clear, area);
-
     f.render_widget(
-        List::new(results).block(
+        List::new(items).block(
             Block::default()
                 .title(format!(" Search: {} ", app.search_input))
                 .borders(Borders::ALL),
@@ -153,15 +151,17 @@ fn draw_search_popup(f: &mut Frame, app: &App) {
     );
 }
 
-fn popup(f: &mut Frame, title: &str, text: &str) {
-    let area = centered_rect(50, 40, f.size());
+fn draw_new_note_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(40, 20, f.size());
     f.render_widget(Clear, area);
+
     f.render_widget(
-        Paragraph::new(text)
-            .alignment(Alignment::Left)
-            .block(Block::default().title(title).borders(Borders::ALL)),
+        Paragraph::new(format!("File name:\n\n{}", app.new_note_input))
+            .block(Block::default().title(" New Note ").borders(Borders::ALL)),
         area,
     );
+
+    f.set_cursor(area.x + 2 + app.new_note_input.len() as u16, area.y + 3);
 }
 
 fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {
