@@ -6,6 +6,7 @@ pub enum Focus {
     Editor,
     Help,
     NewNote,
+    Search,
 }
 
 pub struct App {
@@ -13,16 +14,24 @@ pub struct App {
     pub files: Vec<PathBuf>,
     pub selected: usize,
 
-    pub content: String,
-    pub cursor: usize,
+    // Editor
+    pub lines: Vec<String>,
+    pub cursor_row: usize,
+    pub cursor_col: usize,
+    pub scroll: usize,
 
     pub focus: Focus,
 
     // Status bar
     pub status: String,
 
-    // New note popup
+    // New note
     pub new_note_input: String,
+
+    // Search
+    pub search_input: String,
+    pub search_results: Vec<usize>,
+    pub search_selected: usize,
 }
 
 impl App {
@@ -31,11 +40,16 @@ impl App {
             notes_dir,
             files: Vec::new(),
             selected: 0,
-            content: String::new(),
-            cursor: 0,
+            lines: vec![String::new()],
+            cursor_row: 0,
+            cursor_col: 0,
+            scroll: 0,
             focus: Focus::Files,
-            status: String::from("Ready"),
+            status: "Ready".into(),
             new_note_input: String::new(),
+            search_input: String::new(),
+            search_results: Vec::new(),
+            search_selected: 0,
         }
     }
 
@@ -45,5 +59,19 @@ impl App {
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "-".into())
+    }
+
+    pub fn load_content(&mut self, content: String) {
+        self.lines = content.lines().map(|l| l.to_string()).collect();
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+        }
+        self.cursor_row = 0;
+        self.cursor_col = 0;
+        self.scroll = 0;
+    }
+
+    pub fn content_as_string(&self) -> String {
+        self.lines.join("\n")
     }
 }

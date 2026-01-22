@@ -7,13 +7,14 @@ use ratatui::{
 
 use crate::app::{App, Focus};
 
+const TEXT: Color = Color::Gray;
+const BORDER_FOCUS: Color = Color::White;
+const BORDER_IDLE: Color = Color::DarkGray;
+
 pub fn draw(f: &mut Frame, app: &App) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(f.size());
 
     draw_main(f, app, layout[0]);
@@ -22,6 +23,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.focus {
         Focus::Help => draw_help_popup(f),
         Focus::NewNote => draw_new_note_popup(f, app),
+        Focus::Search => draw_search_popup(f, app),
         _ => {}
     }
 }
@@ -29,10 +31,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 fn draw_main(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(30),
-            Constraint::Percentage(70),
-        ])
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(area);
 
     draw_files(f, app, chunks[0]);
@@ -49,7 +48,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
             let style = if i == app.selected {
                 Style::default().reversed()
             } else {
-                Style::default()
+                Style::default().fg(TEXT)
             };
             ListItem::new(name).style(style)
         })
@@ -58,89 +57,111 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(" Files ")
         .borders(Borders::ALL)
-        .border_style(if app.focus == Focus::Files {
-            Style::default().fg(Color::Yellow)
+        .border_style(Style::default().fg(if app.focus == Focus::Files {
+            BORDER_FOCUS
         } else {
-            Style::default()
-        });
+            BORDER_IDLE
+        }));
 
     f.render_widget(List::new(items).block(block), area);
 }
 
 fn draw_editor(f: &mut Frame, app: &App, area: Rect) {
+    let visible_lines = &app.lines[app.scroll..];
+
     let block = Block::default()
         .title(format!(" Editor — {} ", app.current_file_name()))
         .borders(Borders::ALL)
-        .border_style(if app.focus == Focus::Editor {
-            Style::default().fg(Color::Yellow)
+        .border_style(Style::default().fg(if app.focus == Focus::Editor {
+            BORDER_FOCUS
         } else {
-            Style::default()
-        });
+            BORDER_IDLE
+        }));
 
     f.render_widget(
-        Paragraph::new(app.content.as_str()).block(block),
+        Paragraph::new(visible_lines.join("\n"))
+            .style(Style::default().fg(TEXT))
+            .block(block),
         area,
     );
 
     if app.focus == Focus::Editor {
-        f.set_cursor(area.x + 1 + app.cursor as u16, area.y + 1);
+        let x = area.x + 1 + app.cursor_col as u16;
+        let y = area.y + 1 + (app.cursor_row - app.scroll) as u16;
+        f.set_cursor(x, y);
     }
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let focus = match app.focus {
-        Focus::Files => "FILES",
-        Focus::Editor => "EDITOR",
-        Focus::Help => "HELP",
-        Focus::NewNote => "NEW NOTE",
-    };
-
     let text = format!(
-        " {} | {} | {} | Ctrl+Q quit | Ctrl+S save | Ctrl+H help | n new ",
-        focus,
+        " {} | {} | {} | Ctrl+P search | Ctrl+S save | Ctrl+Q quit ",
+        match app.focus {
+            Focus::Files => "FILES",
+            Focus::Editor => "EDITOR",
+            Focus::Help => "HELP",
+            Focus::NewNote => "NEW NOTE",
+            Focus::Search => "SEARCH",
+        },
         app.current_file_name(),
         app.status
     );
 
-    let bar = Paragraph::new(text)
-        .style(Style::default().fg(Color::Black).bg(Color::White));
-
-    f.render_widget(bar, area);
+    f.render_widget(
+        Paragraph::new(text).style(Style::default().fg(Color::Black).bg(Color::Gray)),
+        area,
+    );
 }
 
 fn draw_help_popup(f: &mut Frame) {
+    popup(f, " Help ", "Ctrl+P Search\nCtrl+S Save\nCtrl+Q Quit\nTab Switch pane\nEsc Close");
+}
+
+fn draw_new_note_popup(f: &mut Frame, app: &App) {
+    popup(
+        f,
+        " New Note ",
+        &format!("File name:\n\n{}", app.new_note_input),
+    );
+}
+
+fn draw_search_popup(f: &mut Frame, app: &App) {
+    let results: Vec<ListItem> = app
+        .search_results
+        .iter()
+        .enumerate()
+        .map(|(i, &idx)| {
+            let name = app.files[idx].file_name().unwrap().to_string_lossy();
+            let style = if i == app.search_selected {
+                Style::default().reversed()
+            } else {
+                Style::default().fg(TEXT)
+            };
+            ListItem::new(name).style(style)
+        })
+        .collect();
+
     let area = centered_rect(60, 60, f.size());
     f.render_widget(Clear, area);
 
-    let text = r#"
-Ctrl+Q   Quit
-Ctrl+S   Save
-Ctrl+H   Toggle help
-Tab      Switch pane
-n        New note
-Esc      Close popup
-"#;
-
     f.render_widget(
-        Paragraph::new(text)
-            .block(Block::default().title(" Help ").borders(Borders::ALL)),
+        List::new(results).block(
+            Block::default()
+                .title(format!(" Search: {} ", app.search_input))
+                .borders(Borders::ALL),
+        ),
         area,
     );
 }
 
-fn draw_new_note_popup(f: &mut Frame, app: &App) {
-    let area = centered_rect(50, 20, f.size());
+fn popup(f: &mut Frame, title: &str, text: &str) {
+    let area = centered_rect(50, 40, f.size());
     f.render_widget(Clear, area);
-
-    let text = format!("File name:\n\n{}", app.new_note_input);
-
     f.render_widget(
         Paragraph::new(text)
-            .block(Block::default().title(" New Note ").borders(Borders::ALL)),
+            .alignment(Alignment::Left)
+            .block(Block::default().title(title).borders(Borders::ALL)),
         area,
     );
-
-    f.set_cursor(area.x + 2 + app.new_note_input.len() as u16, area.y + 3);
 }
 
 fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {
